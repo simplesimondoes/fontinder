@@ -18,11 +18,19 @@ export type Tally = { slug: string; likes: number; nopes: number };
 
 const KEY = "fontinder:votes"; // hash: field `${slug}:like` / `${slug}:nope` -> count
 
-const hasRedis =
-  !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+// Support both naming schemes: Upstash's own integration injects
+// UPSTASH_REDIS_REST_*, while the older Vercel KV integration uses KV_REST_API_*.
+const REDIS_URL =
+  process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const REDIS_TOKEN =
+  process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+const hasRedis = !!REDIS_URL && !!REDIS_TOKEN;
 
 // ---- Upstash Redis backend (production) ----
-const redis = hasRedis ? Redis.fromEnv() : null;
+const redis = hasRedis
+  ? new Redis({ url: REDIS_URL!, token: REDIS_TOKEN! })
+  : null;
 
 // ---- Local file backend (dev only; Vercel fs is read-only) ----
 const DATA_FILE = path.join(process.cwd(), ".data", "votes.json");
