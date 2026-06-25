@@ -18,19 +18,40 @@ export type Tally = { slug: string; likes: number; nopes: number };
 
 const KEY = "fontinder:votes"; // hash: field `${slug}:like` / `${slug}:nope` -> count
 
+// Trim whitespace and strip any surrounding quotes — pasting an env value
+// like ="https://..." into a dashboard can leave literal quotes that make the
+// Upstash client throw on construction.
+function cleanEnv(v?: string): string | undefined {
+  if (!v) return undefined;
+  const trimmed = v.trim().replace(/^['"]+|['"]+$/g, "");
+  return trimmed || undefined;
+}
+
 // Support both naming schemes: Upstash's own integration injects
 // UPSTASH_REDIS_REST_*, while the older Vercel KV integration uses KV_REST_API_*.
 const REDIS_URL =
-  process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  cleanEnv(process.env.UPSTASH_REDIS_REST_URL) ||
+  cleanEnv(process.env.KV_REST_API_URL);
 const REDIS_TOKEN =
-  process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  cleanEnv(process.env.UPSTASH_REDIS_REST_TOKEN) ||
+  cleanEnv(process.env.KV_REST_API_TOKEN);
 
-const hasRedis = !!REDIS_URL && !!REDIS_TOKEN;
+export const HAS_REDIS = !!REDIS_URL && !!REDIS_TOKEN;
 
-// ---- Upstash Redis backend (production) ----
-const redis = hasRedis
-  ? new Redis({ url: REDIS_URL!, token: REDIS_TOKEN! })
-  : null;
+// Construct the client lazily and defensively so a bad/missing value can never
+// break the build (route modules are imported during "Collecting page data").
+let _redis: Redis | null | undefined;
+function getRedis(): Redis | null {
+  if (_redis !== undefined) return _redis;
+  if (!HAS_REDIS) return (_redis = null);
+  try {
+    _redis = new Redis({ url: REDIS_URL!, token: REDIS_TOKEN! });
+  } catch (e) {
+    console.error("Upstash Redis init failed, falling back:", e);
+    _redis = null;
+  }
+  return _redis;
+}
 
 // ---- Local file backend (dev only; Vercel fs is read-only) ----
 const DATA_FILE = path.join(process.cwd(), ".data", "votes.json");
@@ -51,6 +72,7 @@ function writeFile(data: Record<string, number>) {
 export async function recordVote(slug: string, kind: "like" | "nope") {
   if (!FONT_BY_SLUG.has(slug)) throw new Error("unknown font");
   const field = `${slug}:${kind}`;
+  const redis = getRedis();
   if (redis) {
     await redis.hincrby(KEY, field, 1);
   } else {
@@ -61,6 +83,7 @@ export async function recordVote(slug: string, kind: "like" | "nope") {
 }
 
 export async function getAllTallies(): Promise<Record<string, number>> {
+  const redis = getRedis();
   if (redis) {
     const all = (await redis.hgetall<Record<string, number>>(KEY)) ?? {};
     return all;
@@ -93,5 +116,3 @@ export function score(t: Tally): number {
     (1 + (z * z) / n)
   );
 }
-
-export const HAS_REDIS = hasRedis;
