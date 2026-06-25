@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0f1020;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(1200px 800px at 50% -10%, #2a1d4a 0%, #0f1020 55%, #07060f 100%);
+  color: #f4f4f8;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* keep swipe cards from selecting text while dragging */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
